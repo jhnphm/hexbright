@@ -1,86 +1,177 @@
 /* Modified by John Pham */
 /*
-Copyright (c) 2012, "David Hilton" <dhiltonp@gmail.com>
-All rights reserved.
+   Copyright (c) 2012, "David Hilton" <dhiltonp@gmail.com>
+   All rights reserved.
 
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions are met: 
+   Redistribution and use in source and binary forms, with or without
+   modification, are permitted provided that the following conditions are met: 
 
-1. Redistributions of source code must retain the above copyright notice, this
+   1. Redistributions of source code must retain the above copyright notice, this
    list of conditions and the following disclaimer. 
-2. Redistributions in binary form must reproduce the above copyright notice,
+   2. Redistributions in binary form must reproduce the above copyright notice,
    this list of conditions and the following disclaimer in the documentation
    and/or other materials provided with the distribution. 
 
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
-ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
-WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR
-ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
-(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
-LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
-ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
-SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+   ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+   WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+   DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR
+   ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+   (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+   LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+   ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+   (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+   SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-The views and conclusions contained in the software and documentation are those
-of the authors and should not be interpreted as representing official policies, 
-either expressed or implied, of the FreeBSD Project.
-*/
+   The views and conclusions contained in the software and documentation are those
+   of the authors and should not be interpreted as representing official policies, 
+   either expressed or implied, of the FreeBSD Project.
+ */
 
+
+
+#include <click_counter.h>
 #include <print_power.h>
 
 // These next two lines must come after all other library #includes
 #define BUILD_HACK
 #include <hexbright.h>
+#include <EEPROM.h>
+
+
+
+#define DEBUG DEBUG_PROGRAM
+//static const int CLICK = 250; // maximum time for a "short" click
+static const int HOLD_TIME = 500; // milliseconds before going to spin
+static const int OFF_TIME=500; // time before click == off
+
+#if (DEBUG==DEBUG_PROGRAM)
+#define DBG(a) a
+#else
+#define DBG(a)
+#endif
+
+#define EEPROM_BRIGHTNESS 1
+
+#define MODE_OFF 0
+#define MODE_ON 1
+#define MODE_FLASH 2
+#define MODE_SPIN_LEVEL 3
 
 hexbright hb;
 
-void setup() {
-  hb.init_hardware();
-}
-
-#define OFF_MODE 0
-#define ON_MODE 1
-#define SPIN_LEVEL_MODE 2
-#define FLASH_MODE 3
-int mode = OFF_MODE;
-
+int mode = MODE_OFF;
+int new_mode = MODE_OFF;
+int last_pressed = 0;
 int brightness_level = 0;
 
-int press_time = 0;
-int press_used = false;
+void setup() {
+    hb = hexbright();
+    hb.init_hardware();
+    //config_click_count(CLICK);
+    brightness_level = EEPROM.read(EEPROM_BRIGHTNESS)*4;
+
+}
+
+byte updateEEPROM(word location, byte value) {
+  byte c = EEPROM.read(location);
+  if(c!=value) {
+    DBG(Serial.print("Write to EEPROM:"); Serial.print(value); Serial.print("to loc: "); Serial.println(location));
+    EEPROM.write(location, value);
+  }
+  return value;
+}
+
+
+
+
 
 
 void loop() {
-  hb.update();
-  
-  if(!hb.button_pressed())
-    press_used = false;
-    
-  if(!press_used && hb.button_pressed() && hb.button_pressed_time()>30) {
-      switch(mode){
-          case OFF_MODE:
-            brightness_level = 1;
-            hb.set_light(CURRENT_LEVEL, brightness_level, NOW);
-            mode = SPIN_LEVEL_MODE; 
-            press_used = true;
-            break;
-    } else if (mode==SPIN_LEVEL_MODE) {
-      hb.set_light(CURRENT_LEVEL, OFF_LEVEL, NOW);
-      mode = OFF_MODE;
-      press_used = true;
-    }
-  }
+    hb.update();
 
-  if(mode==SPIN_LEVEL_MODE) {
-    if(abs(hb.difference_from_down()-.5)<.35) { // acceleration is not along the light axis, where noise causes random fluctuations.
-      char spin = hb.get_spin();
-      brightness_level = brightness_level + spin;
-      brightness_level = brightness_level>1000 ? 1000 : brightness_level;
-      brightness_level = brightness_level<1 ? 1 : brightness_level;
-      hb.set_light(CURRENT_LEVEL, brightness_level, 100);
+    if(click_count >= MODE_OFF){
+        new_mode = click_count();
+    }else{
+        new_mode = mode;
     }
-  }
-  print_power();
+
+    //if(new_mode>=MODE_OFF && new_mode!=mode) {
+    //    DBG(Serial.print("New mode: "); Serial.println((int)new_mode));
+    //    switch(new_mode){
+    //        case MODE_OFF:
+    //            updateEEPROM(EEPROM_BRIGHTNESS, brightness_level/4);
+    //            hb.set_light(CURRENT_LEVEL, OFF_LEVEL, NOW);
+    //            mode = MODE_OFF;
+    //            break;
+    //        case MODE_ON:
+    //            break;
+    //        case MODE_FLASH:
+    //            break;
+    //        case MODE_SPIN_LEVEL:
+    //            hb.set_light(CURRENT_LEVEL, OFF_LEVEL, NOW);
+    //            mode = MODE_OFF;
+    //            break;
+    //    }
+    //    mode = new_mode;
+    //}
+    switch(mode){
+        case MODE_OFF:
+            //if(hb.button_pressed() && hb.button_pressed_time() > HOLD_TIME) {
+            //    mode = MODE_SPIN_LEVEL;
+            //}else 
+            if(hb.button_just_released()) {
+                if(hb.button_pressed_time()<HOLD_TIME) {
+                    mode = MODE_ON;
+                    last_pressed = millis();
+                }
+            }else{
+                hb.set_light(CURRENT_LEVEL, OFF_LEVEL, NOW);
+            }
+            break;
+        case MODE_ON:
+            hb.set_light(brightness_level, 0, 20); // and pulse (going from max to min over 20 milliseconds)
+            if(hb.button_just_released()) {
+                if(hb.button_pressed_time()<HOLD_TIME) {
+                    if( millis() - last_pressed  > OFF_TIME ){
+                        mode = MODE_OFF;
+                    }else{
+                        mode = MODE_FLASH;
+                    }
+                }
+            }
+            break;
+        case MODE_FLASH:
+            // held for over HOLD_TIME ms, go to strobe
+            static unsigned long flash_time = millis();
+            if(flash_time+70<millis()) { // flash every 70 milliseconds
+                flash_time = millis(); // reset flash_time
+                hb.set_light(MAX_LEVEL, 0, 20); // and pulse (going from max to min over 20 milliseconds)
+                // actually, because of the refresh rate, it's more like 'go from max brightness on high
+                //  to max brightness on low to off.
+            }
+            if(hb.button_just_released()) {
+                if( millis() - last_pressed  > OFF_TIME ){
+                    mode = MODE_OFF;
+                }else{
+                    mode = MODE_FLASH;
+                }
+            }
+            break;
+        case MODE_SPIN_LEVEL:
+            if(abs(hb.difference_from_down()-.5)<.35) { // acceleration is not along the light axis, where noise causes random fluctuations.
+                char spin = hb.get_spin();
+                brightness_level = brightness_level + spin;
+                brightness_level = brightness_level>1000 ? 1000 : brightness_level;
+                brightness_level = brightness_level<1 ? 1 : brightness_level;
+                hb.set_light(CURRENT_LEVEL, brightness_level, 100);
+            }
+            if(hb.button_just_released()) {
+                updateEEPROM(EEPROM_BRIGHTNESS, brightness_level/4);
+                mode = MODE_OFF;
+            }
+            break;
+  
+    }
+    print_power();
 }
