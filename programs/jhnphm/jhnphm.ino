@@ -40,18 +40,20 @@
 
 
 
-#define DEBUG DEBUG_PROGRAM
+//#define DEBUG DEBUG_PROGRAM
 //static const int CLICK = 250; // maximum time for a "short" click
 static const int HOLD_TIME = 500; // milliseconds before going to spin
 static const int NOCLICK_TIME=500; // time before click == off
 
+//#define DBG(a) a
 #if (DEBUG==DEBUG_PROGRAM)
 #define DBG(a) a
 #else
 #define DBG(a)
 #endif
 
-#define EEPROM_BRIGHTNESS 1
+#define EEPROM_BRIGHTNESS1 1
+#define EEPROM_BRIGHTNESS2 2
 
 #define MODE_OFF 0
 #define MODE_ON 1
@@ -62,15 +64,16 @@ hexbright hb;
 
 int mode = MODE_OFF;
 int new_mode = MODE_OFF;
-int last_pressed = 0;
+//int last_pressed = 0;
 int brightness_level = 0;
 
 void setup() {
     hb = hexbright();
     hb.init_hardware();
     //config_click_count(CLICK);
-    brightness_level = EEPROM.read(EEPROM_BRIGHTNESS)*4;
-
+    brightness_level = EEPROM.read(EEPROM_BRIGHTNESS1) << 8;
+    brightness_level |= EEPROM.read(EEPROM_BRIGHTNESS2);
+    DBG(Serial.print("Load Brightness:"); Serial.println(brightness_level));
 }
 
 byte updateEEPROM(word location, byte value) {
@@ -119,27 +122,39 @@ void loop() {
         case MODE_OFF:
             //if(hb.button_pressed() && hb.button_pressed_time() > HOLD_TIME) { //    mode = MODE_SPIN_LEVEL;
             //}else 
-            if(hb.button_just_released()) {
-                if(hb.button_pressed_time()<HOLD_TIME) {
-                    mode = MODE_ON;
-                    last_pressed = millis();
-                }
+            if(hb.button_just_released() && hb.button_pressed_time()<HOLD_TIME) {
+                mode = MODE_ON;
             }else{
                 hb.set_light(CURRENT_LEVEL, OFF_LEVEL, NOW);
             }
             break;
         case MODE_ON:
             hb.set_light(brightness_level, 0, 20); // and pulse (going from max to min over 20 milliseconds)
-            if(hb.button_just_released()) {
-                if(hb.button_pressed_time()<HOLD_TIME) {
-                    if( millis() - last_pressed  > NOCLICK_TIME ){
-                        mode = MODE_OFF;
-                    }else{
-                        mode = MODE_FLASH;
-                    }
-                    last_pressed = millis();
-                }
+            if(hb.button_pressed() && hb.button_pressed_time() > HOLD_TIME) { //    mode = MODE_SPIN_LEVEL;
+                mode = MODE_OFF;
+            }else if(hb.button_just_released() && hb.button_pressed_time()<HOLD_TIME) {
+                mode = MODE_SPIN_LEVEL;
             }
+            break;
+        case MODE_SPIN_LEVEL:
+            hb.set_led(RLED, 350, 350, 1);
+            hb.set_led(GLED, 350, 350, 1);
+            if(abs(hb.difference_from_down()-.5)<.35) { // acceleration is not along the light axis, where noise causes random fluctuations.
+                char spin = hb.get_spin();
+                brightness_level = brightness_level + spin;
+                brightness_level = brightness_level>1000 ? 1000 : brightness_level;
+                brightness_level = brightness_level<1 ? 1 : brightness_level;
+                hb.set_light(CURRENT_LEVEL, brightness_level, 100);
+            }
+            if(hb.button_pressed() && hb.button_pressed_time() > HOLD_TIME) { //    mode = MODE_SPIN_LEVEL;
+                updateEEPROM(EEPROM_BRIGHTNESS1, brightness_level >> 8);
+                updateEEPROM(EEPROM_BRIGHTNESS2, brightness_level & 0xFF);
+                mode = MODE_OFF;
+            }else if(hb.button_just_released() &&  hb.button_pressed_time()<HOLD_TIME) {
+                mode = MODE_FLASH;
+            }
+
+            DBG(Serial.print("Load Brightness:"); Serial.println(brightness_level));
             break;
         case MODE_FLASH:
             // held for over HOLD_TIME ms, go to strobe
@@ -150,32 +165,14 @@ void loop() {
                 // actually, because of the refresh rate, it's more like 'go from max brightness on high
                 //  to max brightness on low to off.
             }
-            if(hb.button_just_released()) {
-                if( millis() - last_pressed  > NOCLICK_TIME ){
-                    mode = MODE_ON;
-                }else{
-                    mode = MODE_SPIN_LEVEL;
-                }
-                last_pressed = millis();
-            } break;
-        case MODE_SPIN_LEVEL:
-            if(abs(hb.difference_from_down()-.5)<.35) { // acceleration is not along the light axis, where noise causes random fluctuations.
-                char spin = hb.get_spin();
-                brightness_level = brightness_level + spin;
-                brightness_level = brightness_level>1000 ? 1000 : brightness_level;
-                brightness_level = brightness_level<1 ? 1 : brightness_level;
-                hb.set_light(CURRENT_LEVEL, brightness_level, 100);
-            }
             if(hb.button_pressed() && hb.button_pressed_time() > HOLD_TIME) { //    mode = MODE_SPIN_LEVEL;
-                updateEEPROM(EEPROM_BRIGHTNESS, brightness_level/4);
+                mode = MODE_OFF;
+            }else if(hb.button_just_released() && hb.button_pressed_time()<HOLD_TIME) {
                 mode = MODE_ON;
-            }else if(hb.button_just_released()) {
-                if(hb.button_pressed_time()<HOLD_TIME) {
-                    mode = MODE_ON;
-                }
-            }
+            } 
             break;
   
     }
+    // Low battery
     print_power();
 }
