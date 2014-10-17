@@ -1,0 +1,3 @@
+[submodule "libraries/EEPROMwearleveling"]
+	path = libraries/EEPROMwearleveling
+	url = https://github.com/MichaelM223/EEPROMwearleveling

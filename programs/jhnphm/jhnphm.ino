@@ -29,6 +29,9 @@
  */
 
 
+#include <EEPROMWearLeveler.h>
+
+#define DEBUG DEBUG_PROGRAM
 
 #include <click_counter.h>
 #include <print_power.h>
@@ -36,14 +39,12 @@
 // These next two lines must come after all other library #includes
 #define BUILD_HACK
 #include <hexbright.h>
-#include <EEPROM.h>
 
 
 
-//#define DEBUG DEBUG_PROGRAM
 //static const int CLICK = 250; // maximum time for a "short" click
-static const int HOLD_TIME = 500; // milliseconds before going to spin
-static const int NOCLICK_TIME=500; // time before click == off
+static const int HOLD_TIME = 350; // milliseconds before going to spin
+static const int CLICK_TIME = 200; // time before click == off
 
 //#define DBG(a) a
 #if (DEBUG==DEBUG_PROGRAM)
@@ -59,86 +60,125 @@ static const int NOCLICK_TIME=500; // time before click == off
 #define MODE_ON 1
 #define MODE_FLASH 2
 #define MODE_SPIN_LEVEL 3
+#define MODE_SW 4
+#define MODE_HOLD 5
+#define MODE_NIGHTLIGHT 7
 
 hexbright hb;
+EEPROMWearLeveler eepromwl(1024, 2); //class(eeprom_size, num_of_addresses) 1024/2 = 512x more read/write cycles
 
-int mode = MODE_OFF;
-int new_mode = MODE_OFF;
-//int last_pressed = 0;
+
+byte mode = MODE_OFF;
 int brightness_level = 0;
+boolean ignore_held = false;
 
 void setup() {
+//    eepromwl.clear();
     hb = hexbright();
     hb.init_hardware();
     //config_click_count(CLICK);
-    brightness_level = EEPROM.read(EEPROM_BRIGHTNESS1) << 8;
-    brightness_level |= EEPROM.read(EEPROM_BRIGHTNESS2);
+    brightness_level = eepromwl.read(EEPROM_BRIGHTNESS1) << 8;
+    brightness_level |= eepromwl.read(EEPROM_BRIGHTNESS2);
     DBG(Serial.print("Load Brightness:"); Serial.println(brightness_level));
+    config_click_count(CLICK_TIME);
 }
 
 byte updateEEPROM(word location, byte value) {
-  byte c = EEPROM.read(location);
-  if(c!=value) {
-    DBG(Serial.print("Write to EEPROM:"); Serial.print(value); Serial.print("to loc: "); Serial.println(location));
-    EEPROM.write(location, value);
-  }
-  return value;
+    byte c = eepromwl.read(location);
+    if(c!=value) {
+        DBG(Serial.print("Write to EEPROM: "); Serial.print(value); Serial.print(" to loc: "); Serial.println(location));
+        eepromwl.write(location, value);
+    }
+    return value;
 }
 
+//void sw_start(){
+//    mode = MODE_SW;
+//    click_count = 0;
+//}
 
 
+boolean button_held(){
+    if(ignore_held){
+        return false;
+    }else{
+        return hb.button_pressed() && hb.button_pressed_time()>HOLD_TIME;
+    }
+}
 
-
+boolean button_clicked(){
+    return hb.button_just_released() && hb.button_pressed_time()<HOLD_TIME;
+}
 
 void loop() {
+    static long t_mode_sw;
+    int clicks = click_count();
     hb.update();
 
-    if(click_count >= MODE_OFF){
-        new_mode = click_count();
-    }else{
-        new_mode = mode;
+    if(hb.button_just_released()){
+        ignore_held = false;
     }
 
-    //if(new_mode>=MODE_OFF && new_mode!=mode) {
-    //    DBG(Serial.print("New mode: "); Serial.println((int)new_mode));
-    //    switch(new_mode){
-    //        case MODE_OFF:
-    //            updateEEPROM(EEPROM_BRIGHTNESS, brightness_level/4);
-    //            hb.set_light(CURRENT_LEVEL, OFF_LEVEL, NOW);
-    //            mode = MODE_OFF;
-    //            break;
-    //        case MODE_ON:
-    //            break;
-    //        case MODE_FLASH:
-    //            break;
-    //        case MODE_SPIN_LEVEL:
-    //            hb.set_light(CURRENT_LEVEL, OFF_LEVEL, NOW);
-    //            mode = MODE_OFF;
-    //            break;
-    //    }
-    //    mode = new_mode;
-    //}
     switch(mode){
+        case MODE_SW:
+            hb.set_light(CURRENT_LEVEL, 0, NOW);
+            DBG(Serial.print("t_mode_sw: "); Serial.println(t_mode_sw));
+            DBG(Serial.print("millis: "); Serial.println(millis()));
+
+            if (millis() - t_mode_sw > CLICK_TIME*5){ //if bouncy switch weirdness puts us here forever, exit and go to on
+                mode = MODE_ON;  
+                t_mode_sw = millis();
+            }else if (clicks < 0){ // Clicks not settled
+                if(hexbright::get_led_state(RLED) == LED_OFF) {
+                    hexbright::set_led(RLED, 50, 50);
+                }
+            }else{
+                switch(clicks){
+                    case 1: 
+                        mode = MODE_OFF;
+                        break;
+                    case 2:
+                        mode = MODE_SPIN_LEVEL;
+                        break;
+                    case 3:
+                        mode = MODE_NIGHTLIGHT;
+                        break;
+                    default:
+                        mode = MODE_ON;
+                }
+                DBG(Serial.print("Click Count: "); Serial.println(clicks));
+            }
+            break;
         case MODE_OFF:
-            //if(hb.button_pressed() && hb.button_pressed_time() > HOLD_TIME) { //    mode = MODE_SPIN_LEVEL;
-            //}else 
-            if(hb.button_just_released() && hb.button_pressed_time()<HOLD_TIME) {
-                mode = MODE_ON;
+            if(hb.button_pressed()) { 
+                mode = MODE_HOLD;
             }else{
                 hb.set_light(CURRENT_LEVEL, OFF_LEVEL, NOW);
             }
             break;
-        case MODE_ON:
-            hb.set_light(brightness_level, 0, 20); // and pulse (going from max to min over 20 milliseconds)
-            if(hb.button_pressed() && hb.button_pressed_time() > HOLD_TIME) { //    mode = MODE_SPIN_LEVEL;
+        case MODE_HOLD:
+            if(button_clicked()) { //    mode = MODE_SPIN_LEVEL;
+                mode = MODE_ON;
+            }else if(hb.button_just_released()) {
                 mode = MODE_OFF;
-            }else if(hb.button_just_released() && hb.button_pressed_time()<HOLD_TIME) {
-                mode = MODE_SPIN_LEVEL;
+            }else{
+                hb.set_light(CURRENT_LEVEL, brightness_level, NOW); 
+            }
+            break;
+        case MODE_ON:
+            hb.set_light(CURRENT_LEVEL, brightness_level, NOW); 
+            if(button_held()) { //    mode = MODE_SPIN_LEVEL;
+                mode = MODE_FLASH;
+            }else if(button_clicked()) {
+                mode = MODE_SW;
+                t_mode_sw = millis();
             }
             break;
         case MODE_SPIN_LEVEL:
-            hb.set_led(RLED, 350, 350, 1);
-            hb.set_led(GLED, 350, 350, 1);
+            if(hexbright::get_led_state(RLED) == LED_OFF) {
+                hexbright::set_led(RLED, 350, 350);
+            }
+
             if(abs(hb.difference_from_down()-.5)<.35) { // acceleration is not along the light axis, where noise causes random fluctuations.
                 char spin = hb.get_spin();
                 brightness_level = brightness_level + spin;
@@ -146,15 +186,24 @@ void loop() {
                 brightness_level = brightness_level<1 ? 1 : brightness_level;
                 hb.set_light(CURRENT_LEVEL, brightness_level, 100);
             }
-            if(hb.button_pressed() && hb.button_pressed_time() > HOLD_TIME) { //    mode = MODE_SPIN_LEVEL;
+            if(button_held()) { //    mode = MODE_SPIN_LEVEL;
+                DBG(Serial.print("Save Brightness: "); Serial.println(brightness_level));
                 updateEEPROM(EEPROM_BRIGHTNESS1, brightness_level >> 8);
                 updateEEPROM(EEPROM_BRIGHTNESS2, brightness_level & 0xFF);
-                mode = MODE_OFF;
-            }else if(hb.button_just_released() &&  hb.button_pressed_time()<HOLD_TIME) {
-                mode = MODE_FLASH;
+                mode = MODE_ON;
+                ignore_held = true;
+            }else if(button_clicked()) {
+                mode = MODE_ON;
             }
+            DBG(Serial.print("Brightness: "); Serial.println(brightness_level));
 
-            DBG(Serial.print("Load Brightness:"); Serial.println(brightness_level));
+            break;
+        case MODE_NIGHTLIGHT:
+            if(!hb.low_voltage_state())
+            hb.set_led(RLED, 100, 0, 255);
+            if(button_clicked()) {
+                mode = MODE_ON;
+            }
             break;
         case MODE_FLASH:
             // held for over HOLD_TIME ms, go to strobe
@@ -165,13 +214,11 @@ void loop() {
                 // actually, because of the refresh rate, it's more like 'go from max brightness on high
                 //  to max brightness on low to off.
             }
-            if(hb.button_pressed() && hb.button_pressed_time() > HOLD_TIME) { //    mode = MODE_SPIN_LEVEL;
-                mode = MODE_OFF;
-            }else if(hb.button_just_released() && hb.button_pressed_time()<HOLD_TIME) {
+            if(hb.button_just_released()) {
                 mode = MODE_ON;
             } 
             break;
-  
+
     }
     // Low battery
     print_power();

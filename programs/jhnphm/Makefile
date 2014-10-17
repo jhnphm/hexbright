@@ -4,7 +4,7 @@ ALTERNATE_CORE_PATH = $(ARDUINO_SKETCHBOOK)/hardware/hexbright
 ARDUINO_VAR_PATH = $(ARDUINO_DIR)/hardware/arduino/variants
 
 ARDUINO_PORT = /dev/ttyUSB0
-ARDUINO_LIBS = hb_utilities EEPROM hexbright
+ARDUINO_LIBS = hb_utilities EEPROMwearleveling hexbright EEPROM
 BOARD_TAG = hexbright
 ARDUINO_SKETCHBOOK = ../../
 include ../../Arduino.mk

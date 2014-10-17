@@ -1,8 +1,12 @@
-Button press toggles on or off (30 ms minimum to avoid hyper-sensitivity).
+John Pham's hexbright code
 
-Using as a rotary dial slowly turns up or down brightness.
+Click = on
 
-Spinning in circles rapidly turns up or down brightness.
+1 click while on == off, restores saved brightness
+2 clicks go into spin adjust brightness mode
+Hold down in spin adjust mode to save
+1 click in spin adjust to go back to on
+Hold down while off or on to strobe
 
 
-Video of use: www.youtube.com/watch?v=SV6-1KUU9g8
+GPL Licensed
