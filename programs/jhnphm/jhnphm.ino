@@ -53,8 +53,8 @@ static const int CLICK_TIME = 200; // time before click == off
 #define DBG(a)
 #endif
 
+#define EEPROM_BRIGHTNESS0 0
 #define EEPROM_BRIGHTNESS1 1
-#define EEPROM_BRIGHTNESS2 2
 
 #define MODE_OFF 0
 #define MODE_ON 1
@@ -65,7 +65,7 @@ static const int CLICK_TIME = 200; // time before click == off
 #define MODE_NIGHTLIGHT 7
 
 hexbright hb;
-EEPROMWearLeveler eepromwl(1024, 2); //class(eeprom_size, num_of_addresses) 1024/2 = 512x more read/write cycles
+EEPROMWearLeveler eepromwl(512, 2); //class(eeprom_size, num_of_addresses) 1024/2 = 512x more read/write cycles
 
 
 byte mode = MODE_OFF;
@@ -73,12 +73,12 @@ int brightness_level = 0;
 boolean ignore_held = false;
 
 void setup() {
-//    eepromwl.clear();
+    //eepromwl.clear();
     hb = hexbright();
     hb.init_hardware();
     //config_click_count(CLICK);
-    brightness_level = eepromwl.read(EEPROM_BRIGHTNESS1) << 8;
-    brightness_level |= eepromwl.read(EEPROM_BRIGHTNESS2);
+    brightness_level = eepromwl.read(EEPROM_BRIGHTNESS0) << 8;
+    brightness_level |= eepromwl.read(EEPROM_BRIGHTNESS1);
     DBG(Serial.print("Load Brightness:"); Serial.println(brightness_level));
     config_click_count(CLICK_TIME);
 }
@@ -188,8 +188,8 @@ void loop() {
             }
             if(button_held()) { //    mode = MODE_SPIN_LEVEL;
                 DBG(Serial.print("Save Brightness: "); Serial.println(brightness_level));
-                updateEEPROM(EEPROM_BRIGHTNESS1, brightness_level >> 8);
-                updateEEPROM(EEPROM_BRIGHTNESS2, brightness_level & 0xFF);
+                updateEEPROM(EEPROM_BRIGHTNESS0, brightness_level >> 8);
+                updateEEPROM(EEPROM_BRIGHTNESS1, brightness_level & 0xFF);
                 mode = MODE_ON;
                 ignore_held = true;
             }else if(button_clicked()) {
